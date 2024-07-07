@@ -20,7 +20,7 @@ import java.time.ZoneId
 import java.net.URLEncoder
 import java.time.Instant
 
-def BASE_URI() { 'https://api.homesafe.kidde.com/api/v4/' }
+def BASE_URI() { 'https://api.homesafe.kidde.com/api/v4' }
 
 
 def version() {"0.0.1"}
@@ -44,12 +44,11 @@ preferences {
 }
 
 
-def kidde_api(path, data=null, method=null, closure) {
+def kidde_api(path, data=null, headers=null, method=null, closure) {
     def access_token = state.access_token
     def contentType = 'application/json'
-    def headers = [
-    ]
-    if(access_token) headers['homeboy-auth'] = access_token
+    if(!headers) headers = [:]
+    if(access_token && !headers) headers['homeboy-auth'] = access_token
     def uri = "${BASE_URI()}/${path}"
     method = method ?: (data ? 'POST' : 'GET')
     if(data && 'GET' == method) {
@@ -57,13 +56,24 @@ def kidde_api(path, data=null, method=null, closure) {
         uri = "${uri}?${params}"
         data = null
     }
-    debug("uri: ${uri}, data: ${data}, method: ${method}")
-    "http${method.toLowerCase().capitalize()}"([uri: uri, headers: headers, body: data, contentType: contentType, timeout: TIMEOUT()], closure)
+    debug("uri: ${uri}, data: ${data}, headers: ${headers}, method: ${method}")
+    "http${method.toLowerCase().capitalize()}"([uri: uri, headers: headers, body: JsonOutput.toJson(data), contentType: contentType], closure)
 }
 
 def ensure_access_token() {
     if(!state.access_token) {
-        kidde_api("auth/login", ["email": settings['email'], "password": settings['password'], "timezone": "America/Los_Angeles"]) {
+        kidde_api("auth/login", ["email": settings['email'], "password": settings['password'], "timezone": "America/Los_Angeles"], 
+            [
+                "homeboy-app-platform": "android",
+                "homeboy-app-version": "4.0.12",
+                "homeboy-app-platform-version": "12",
+                "homeboy-app-id": "afc41e9816b1f0d7",
+                "homeboy-app-brand": "google",
+                "homeboy-app-device": "sdk_gphone64_x86_64",
+                "cache-control": "max-age=0",
+                "homeboy-app": "com.kidde.android.monitor1",
+                "user-agent": "com.kidde.android.monitor1/4.0.12"
+            ], null) {
             json = it.data
             if(json['access_token']) {
                 debug("setting access token to "+json['access_token'])
@@ -78,11 +88,11 @@ def update_devices() {
     state.devices = state.devices ?: [:]
     state.locations = state.locations ?: [:]
     ensure_access_token()
-    kidde_api("location", null, null) {
+    kidde_api("location", null, null, null) {
         def json = it.data
         for(location in json) {
             state.locations[location.id] = location
-            kidde_api("location/${location.id}/device", null, null) {
+            kidde_api("location/${location.id}/device", null, null, null) {
                 for(device in it.data) {
                     state.devices[device.id] = device
                 }
@@ -102,22 +112,22 @@ def update_devices() {
         def id = entry.key
         def meta = entry.value
         def name = meta.label
-        device = createChildDevice(id, name)
+        device = createChildDevice(name, id)
         def caps = [
             "iaq_temperature": ['name': "temperature", 'subkey': 'value'],
             "humidity": ['name': "humidity", 'subkey': 'value'],
-            //"iaq": ['name': "airQualityIndex", 'subkey': 'value'],
+            "iaq": ['name': "airQualityIndex", 'subkey': 'value'],
             "co2": ['name': "carbonDioxide", 'subkey': 'value'],
-            "smoke_alarm": ['name': "smoke", 'values': [true: 'detected', false: 'clear']],
-            "co_alarm": ['name': "carbonMonoxide", 'values': [true: 'detected', false: 'clear']]
+            "smoke_alarm": ['name': "smoke", 'values': ['true': 'detected', 'false': 'clear']],
+            "co_alarm": ['name': "carbonMonoxide", 'values': ['true': 'detected', 'false': 'clear']]
         ]
         for (cap in caps) {
             key = cap.key
             if(null != meta[key]) {
                 def val = cap.value.subkey ? meta[key][cap.value.subkey] : meta[key]
-                def state = (cap.value.values ? cap.value.values[val] : val)
+                def state = (cap.value.values ? cap.value.values[String.valueOf(val)] : val)
                 debug("sending value ${state} to attribute ${cap.value.name}")
-                device.sendEvent(name: cap.value.name, value: state)
+                device.sendEvent(name: cap.value.name, value: state, isStateChange: true)
             }
         }
     }
@@ -138,7 +148,7 @@ def mainPage(){
             input "debugMode", "bool", title: "Enable debugging", defaultValue: true
         }
         section(getFormat("header", "Login Information")) {
-            input "username", "text", title: "Username", required: true
+            input "email", "text", title: "Email", required: true
             input "password", "text", title: "Password", required: true
         }
     }
@@ -187,7 +197,7 @@ def getDeviceId(id) {
 }
 
 private createChildDevice(label, id) {
-    def deviceId = id
+    def deviceId = String.valueOf(id)
     def createdDevice = getChildDevice(deviceId)
     def name = "Kidde HomeSafe Device"
 
@@ -205,7 +215,6 @@ private createChildDevice(label, id) {
     } else {
         debug("Child device id: ${deviceId} already exists", "createChildDevice()")
         if(label && label != createdDevice.getLabel()) {
-            createdDevice.setLabel(label)
             createdDevice.sendEvent(name:'label', value: label, isStateChange: true)
         }
         if(name && name != createdDevice.getName()) {
