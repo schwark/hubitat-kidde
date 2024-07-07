@@ -1,2 +1,2 @@
 # hubitat-kidde
-Support for Kidde Smart Sensors
+Support for Kidde HomeSafe
