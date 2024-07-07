@@ -1,2 +1,2 @@
 # hubitat-kidde
-Support for Kidde HomeSafe
+Support for Kidde HomeSafe Devices
