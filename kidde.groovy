@@ -63,7 +63,7 @@ def kidde_api(path, data=null, method=null, closure) {
 
 def ensure_access_token() {
     if(!state.access_token) {
-        kidde_api("auth/login", {"email": settings['email'], "password": settings['password'], "timezone": "America/Los_Angeles"}) {
+        kidde_api("auth/login", ["email": settings['email'], "password": settings['password'], "timezone": "America/Los_Angeles"]) {
             json = it.data
             if(json['access_token']) {
                 debug("setting access token to "+json['access_token'])
@@ -104,7 +104,7 @@ def update_devices() {
         def name = meta.label
         device = createChildDevice(id, name)
         def caps = [
-            "iaq_temperature": ['name': "temperature", 'subkey': 'value']
+            "iaq_temperature": ['name': "temperature", 'subkey': 'value'],
             "humidity": ['name': "humidity", 'subkey': 'value'],
             //"iaq": ['name': "airQualityIndex", 'subkey': 'value'],
             "co2": ['name': "carbonDioxide", 'subkey': 'value'],
